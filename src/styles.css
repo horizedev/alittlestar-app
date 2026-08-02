@@ -2053,11 +2053,13 @@ textarea {
   min-height: 42px;
   padding: 0 15px;
   gap: 6px;
+  border: 0;
   border-radius: 13px;
   color: #fff;
   background: var(--sage);
   box-shadow: 0 7px 18px rgba(71, 115, 97, 0.18);
   text-decoration: none;
+  font: inherit;
   font-size: 11px;
   font-weight: 750;
   transition: background-color 160ms ease, transform 160ms ease;
@@ -2174,6 +2176,104 @@ textarea {
   margin: 3px 0 0;
   font-size: 17px;
   letter-spacing: -0.02em;
+}
+
+.workspace-ready-copy {
+  margin: 12px 0 16px;
+  color: #65716c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.auth-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 14px 0 4px;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 13px;
+  background: #f0f2ee;
+}
+
+.auth-mode-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  color: #6a746f;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auth-mode-tabs button.active {
+  color: var(--sage);
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(48, 61, 55, 0.08);
+}
+
+.landing-auth-form {
+  display: grid;
+  margin-top: 12px;
+  gap: 10px;
+}
+
+.landing-auth-form > label {
+  display: grid;
+  gap: 6px;
+  color: #56615c;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.landing-auth-form .landing-email-input {
+  position: relative;
+}
+
+.password-toggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  margin-right: -4px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.password-toggle:hover {
+  color: var(--sage);
+  background: rgba(71, 115, 97, 0.08);
+}
+
+.auth-form-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+
+.auth-inline-link,
+.auth-back-link {
+  font-size: 10px;
+}
+
+.auth-back-link {
+  display: block;
+  margin: 10px auto 0;
+}
+
+.auth-submit {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 2px;
+}
+
+.landing-auth-form > small {
+  color: var(--muted);
+  text-align: center;
+  font-size: 8px;
+  line-height: 1.5;
 }
 
 .landing-invite-notice {
@@ -3050,11 +3150,13 @@ textarea {
   margin-top: 26px;
   padding: 0 20px;
   gap: 7px;
+  border: 0;
   border-radius: 14px;
   color: var(--sage);
   background: #fff;
   box-shadow: 0 10px 24px rgba(21, 44, 34, 0.16);
   text-decoration: none;
+  font: inherit;
   font-size: 12px;
   font-weight: 800;
   transition: color 160ms ease, transform 160ms ease;

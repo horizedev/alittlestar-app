@@ -105,6 +105,14 @@ function readPendingInvitation() {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [showWorkspace, setShowWorkspace] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('app') === '1'
+    } catch {
+      return false
+    }
+  })
   const [children, setChildren] = useState<Child[]>([])
   const [roles, setRoles] = useState<Record<string, ChildRole>>({})
   const [currentChildId, setCurrentChildId] = useState('')
@@ -116,6 +124,29 @@ function App() {
   const [inviteDismissed, setInviteDismissed] = useState(false)
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteError, setInviteError] = useState('')
+
+  const enterWorkspace = useCallback(() => {
+    setChildrenLoading(true)
+    setShowWorkspace(true)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.set('app', '1')
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    } catch {
+      // Workspace state still works without URL sync.
+    }
+  }, [])
+
+  const leaveWorkspace = useCallback(() => {
+    setShowWorkspace(false)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('app')
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    } catch {
+      // Landing state still works without URL sync.
+    }
+  }, [])
 
   const loadChildren = useCallback(
     async (userId: string, preferredChildId?: string) => {
@@ -174,18 +205,28 @@ function App() {
     let active = true
 
     void supabase.auth.getSession().then(({ data }) => {
-      if (active) {
-        setSession(data.session)
-        setAuthReady(true)
+      if (!active) {
+        return
       }
+      setSession(data.session)
+      setAuthReady(true)
     })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (active) {
-        setSession(nextSession)
-        setAuthReady(true)
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) {
+        return
+      }
+      setSession(nextSession)
+      setAuthReady(true)
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true)
+        leaveWorkspace()
+      }
+      if (event === 'SIGNED_OUT') {
+        setRecoveryMode(false)
+        leaveWorkspace()
       }
     })
 
@@ -193,10 +234,10 @@ function App() {
       active = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [leaveWorkspace])
 
   useEffect(() => {
-    if (!session) {
+    if (!session || !showWorkspace || recoveryMode) {
       setChildren([])
       setRoles({})
       setCurrentChildId('')
@@ -205,17 +246,72 @@ function App() {
     }
 
     void loadChildren(session.user.id)
-  }, [loadChildren, session])
+  }, [loadChildren, recoveryMode, session, showWorkspace])
 
-  const signInWithEmail = async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
+  const mapAuthError = (message: string) => {
+    const lower = message.toLowerCase()
+    if (lower.includes('invalid login credentials')) {
+      return '電郵或密碼不正確，請再試一次。'
+    }
+    if (lower.includes('user already registered')) {
+      return '這個電郵已註冊，請直接登入。'
+    }
+    if (lower.includes('password should be at least')) {
+      return '密碼至少需要 8 個字元。'
+    }
+    if (lower.includes('email not confirmed')) {
+      return '請先開啟驗證電郵，完成帳戶確認後再登入。'
+    }
+    if (lower.includes('same password')) {
+      return '新密碼不可與舊密碼相同。'
+    }
+    return '操作未能完成，請稍後再試。'
+  }
+
+  const signInWithPassword = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      return mapAuthError(error.message)
+    }
+    setRecoveryMode(false)
+    enterWorkspace()
+    return null
+  }
+
+  const signUpWithPassword = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
       email,
+      password,
       options: {
-        emailRedirectTo: new URL('/', window.location.origin).toString(),
-        shouldCreateUser: true,
+        emailRedirectTo: new URL('/?app=1', window.location.origin).toString(),
       },
     })
-    return error ? '未能寄出登入電郵，請稍後再試。' : null
+    if (error) {
+      return mapAuthError(error.message)
+    }
+    if (!data.session) {
+      return 'NOTICE:帳戶已建立。請檢查電郵完成驗證後再登入。'
+    }
+    setRecoveryMode(false)
+    enterWorkspace()
+    return null
+  }
+
+  const requestPasswordReset = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: new URL('/?reset=1', window.location.origin).toString(),
+    })
+    return error ? '未能寄出重設密碼郵件，請稍後再試。' : null
+  }
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) {
+      return mapAuthError(error.message)
+    }
+    setRecoveryMode(false)
+    enterWorkspace()
+    return null
   }
 
   const createChild = async (name: string, birthDate: string | null) => {
@@ -309,6 +405,8 @@ function App() {
   }
 
   const signOut = async () => {
+    leaveWorkspace()
+    setRecoveryMode(false)
     await supabase.auth.signOut()
   }
 
@@ -326,11 +424,17 @@ function App() {
     return <LoadingScreen />
   }
 
-  if (!session) {
+  if (!session || recoveryMode || !showWorkspace) {
     return (
       <LandingPage
         hasInvitation={Boolean(pendingInvite)}
-        onSignIn={signInWithEmail}
+        isLoggedIn={Boolean(session) && !recoveryMode}
+        recoveryMode={recoveryMode}
+        onEnterWorkspace={enterWorkspace}
+        onSignIn={signInWithPassword}
+        onSignUp={signUpWithPassword}
+        onForgotPassword={requestPasswordReset}
+        onUpdatePassword={updatePassword}
       />
     )
   }
@@ -616,7 +720,7 @@ function Tracker({
         children={children}
         currentChild={currentChild}
         roles={roles}
-        userEmail={session.user.email ?? 'Google 帳戶'}
+        userEmail={session.user.email ?? '已登入帳戶'}
         onClose={() => setShowChildMenu(false)}
         onSelect={(childId) => {
           onSelectChild(childId)

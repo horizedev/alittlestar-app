@@ -12,15 +12,17 @@ npm run dev
 
 在 `.env.local` 填入 Supabase 專案網址及 publishable key。Publishable key 可安全用於前端；切勿把 secret key 或 service role key 放進 Vite 環境變數。
 
-## 電郵登入設定
+## 電郵與密碼登入設定
 
-應用程式使用 Supabase 的免密碼電郵登入連結。請在 Supabase Dashboard 的 Authentication → URL Configuration 設定：
+應用程式使用電郵與密碼註冊／登入，並支援忘記密碼重設流程。請在 Supabase Dashboard 的 Authentication → URL Configuration 設定：
 
-   - Site URL：`https://alittlestar-app.vercel.app`
-   - Redirect URLs：`http://localhost:5173/**`
-   - Redirect URLs：`https://alittlestar-app.vercel.app/**`
+- Site URL：`https://alittlestar-app.vercel.app`
+- Redirect URLs：`http://localhost:5173/**`
+- Redirect URLs：`https://alittlestar-app.vercel.app/**`
 
-正式對外使用前，建議在 Authentication → Email 設定自訂 SMTP，避免受測試郵件配額限制。
+重設密碼會導向 `/?reset=1`。正式對外使用前，建議在 Authentication → Email 設定自訂 SMTP，避免受測試郵件配額限制。
+
+已登入用戶造訪首頁時，會看到「進入工作台」連結（網址為 `/?app=1`）。
 
 ## 資料庫
 

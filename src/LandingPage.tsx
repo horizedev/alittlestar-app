@@ -1,4 +1,3 @@
-import { useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   BarChart3,
@@ -6,44 +5,37 @@ import {
   Check,
   ClipboardList,
   HeartHandshake,
-  LoaderCircle,
   LockKeyhole,
   Mail,
   NotebookPen,
   Pill,
   QrCode,
-  Send,
   ShieldCheck,
   Sparkles,
   Star,
   UsersRound,
 } from 'lucide-react'
+import { AuthPanel } from './AuthPanel'
 
 export function LandingPage({
   hasInvitation,
+  isLoggedIn,
+  recoveryMode,
+  onEnterWorkspace,
   onSignIn,
+  onSignUp,
+  onForgotPassword,
+  onUpdatePassword,
 }: {
   hasInvitation: boolean
-  onSignIn: (email: string) => Promise<string | null>
+  isLoggedIn: boolean
+  recoveryMode: boolean
+  onEnterWorkspace: () => void
+  onSignIn: (email: string, password: string) => Promise<string | null>
+  onSignUp: (email: string, password: string) => Promise<string | null>
+  onForgotPassword: (email: string) => Promise<string | null>
+  onUpdatePassword: (password: string) => Promise<string | null>
 }) {
-  const [email, setEmail] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState(false)
-  const [error, setError] = useState('')
-
-  const signIn = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError('')
-    const message = await onSignIn(email.trim())
-    if (message) {
-      setError(message)
-    } else {
-      setSent(true)
-    }
-    setBusy(false)
-  }
-
   return (
     <div className="landing-page" id="top">
       <a className="skip-link" href="#landing-main">跳到主要內容</a>
@@ -61,9 +53,16 @@ export function LandingPage({
             <a href="#how-it-works">使用方法</a>
             <a href="#privacy">資料安全</a>
           </div>
-          <a className="landing-nav-cta" href="#start">
-            免費開始 <ArrowRight size={16} aria-hidden="true" />
-          </a>
+          {isLoggedIn && !recoveryMode ? (
+            <button className="landing-nav-cta" type="button" onClick={onEnterWorkspace}>
+              進入工作台 <ArrowRight size={16} aria-hidden="true" />
+            </button>
+          ) : (
+            <a className="landing-nav-cta" href="#start">
+              {recoveryMode ? '重設密碼' : '免費開始'}{' '}
+              <ArrowRight size={16} aria-hidden="true" />
+            </a>
+          )}
         </nav>
       </header>
 
@@ -89,78 +88,42 @@ export function LandingPage({
               <span><Check size={16} aria-hidden="true" /> 家庭共同管理</span>
             </div>
 
-            <section className="hero-signin" id="start" aria-labelledby="signin-title">
-              {hasInvitation ? (
-                <div className="landing-invite-notice">
-                  <QrCode size={20} aria-hidden="true" />
-                  <div>
-                    <strong>你收到共同管理邀請</strong>
-                    <span>用電郵登入後，即可確認加入孩子的照顧團隊。</span>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="signin-heading">
-                <span className="eyebrow">{hasInvitation ? '接受邀請' : '免費開始使用'}</span>
-                <h2 id="signin-title">
-                  {hasInvitation ? '登入並加入照顧團隊' : '一封電郵，立即開始'}
-                </h2>
-              </div>
-
-              {sent ? (
-                <div className="email-sent landing-email-sent" aria-live="polite">
-                  <span><Mail size={23} aria-hidden="true" /></span>
-                  <div>
-                    <strong>登入連結已寄出</strong>
-                    <p>請到 {email} 開啟郵件內的連結，完成後會自動返回。</p>
-                  </div>
-                  <button
-                    className="text-button"
-                    type="button"
-                    onClick={() => {
-                      setSent(false)
-                      setError('')
-                    }}
-                  >
-                    使用另一個電郵地址
-                  </button>
-                </div>
-              ) : (
-                <form className="landing-email-form" onSubmit={signIn}>
-                  <label htmlFor="landing-email">電郵地址</label>
-                  <div className="landing-email-row">
-                    <div className="landing-email-input">
-                      <Mail size={19} aria-hidden="true" />
-                      <input
-                        id="landing-email"
-                        name="email"
-                        type="email"
-                        inputMode="email"
-                        autoComplete="email"
-                        spellCheck={false}
-                        required
-                        placeholder="例如：name@example.com…"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                      />
+            {isLoggedIn && !recoveryMode ? (
+              <section className="hero-signin" id="start" aria-labelledby="workspace-title">
+                {hasInvitation ? (
+                  <div className="landing-invite-notice">
+                    <QrCode size={20} aria-hidden="true" />
+                    <div>
+                      <strong>你收到共同管理邀請</strong>
+                      <span>進入工作台後，即可確認加入孩子的照顧團隊。</span>
                     </div>
-                    <button className="primary-button" type="submit" disabled={busy}>
-                      {busy ? (
-                        <LoaderCircle className="spin" size={19} aria-hidden="true" />
-                      ) : (
-                        <Send size={18} aria-hidden="true" />
-                      )}
-                      {busy ? '正在寄出…' : '寄送登入連結'}
-                    </button>
                   </div>
-                  <small>
-                    毋須密碼。登入即表示你同意妥善保管孩子的敏感資料。
-                  </small>
-                </form>
-              )}
-
-              {error ? <p className="form-error" role="alert">{error}</p> : null}
-            </section>
+                ) : null}
+                <div className="signin-heading">
+                  <span className="eyebrow">已登入</span>
+                  <h2 id="workspace-title">繼續照顧孩子的日常</h2>
+                </div>
+                <p className="workspace-ready-copy">
+                  你已準備就緒。進入工作台即可記錄今日狀況、查看趨勢與覆診筆記。
+                </p>
+                <button
+                  className="primary-button auth-submit"
+                  type="button"
+                  onClick={onEnterWorkspace}
+                >
+                  進入工作台 <ArrowRight size={18} aria-hidden="true" />
+                </button>
+              </section>
+            ) : (
+              <AuthPanel
+                hasInvitation={hasInvitation}
+                recoveryMode={recoveryMode}
+                onSignIn={onSignIn}
+                onSignUp={onSignUp}
+                onForgotPassword={onForgotPassword}
+                onUpdatePassword={onUpdatePassword}
+              />
+            )}
           </div>
 
           <ProductPreview />
@@ -226,8 +189,8 @@ export function LandingPage({
               <span className="workflow-number">1</span>
               <div>
                 <Mail size={23} aria-hidden="true" />
-                <h3>用電郵登入</h3>
-                <p>毋須記密碼，開啟登入連結即可安全進入。</p>
+                <h3>用電郵註冊或登入</h3>
+                <p>設定密碼即可開始；忘記時也能安全重設。</p>
               </div>
             </li>
             <li>
@@ -293,8 +256,8 @@ export function LandingPage({
               <div><strong>逐筆權限保護</strong><span>資料庫層面阻止跨家庭存取</span></div>
             </article>
             <article>
-              <Mail size={22} aria-hidden="true" />
-              <div><strong>免密碼登入</strong><span>登入連結直接寄到你的電郵</span></div>
+              <LockKeyhole size={22} aria-hidden="true" />
+              <div><strong>電郵與密碼登入</strong><span>也可隨時安全重設密碼</span></div>
             </article>
             <article>
               <QrCode size={22} aria-hidden="true" />
@@ -308,10 +271,17 @@ export function LandingPage({
             <Star size={29} fill="currentColor" />
           </span>
           <h2 id="final-cta-title">從今天開始，更了解孩子一點。</h2>
-          <p>不用準備，不用學習複雜工具。用一封電郵，建立第一份記錄。</p>
-          <a className="final-cta-button" href="#start">
-            免費開始使用 <ArrowRight size={18} aria-hidden="true" />
-          </a>
+          <p>不用準備，不用學習複雜工具。用電郵與密碼，建立第一份記錄。</p>
+          {isLoggedIn && !recoveryMode ? (
+            <button className="final-cta-button" type="button" onClick={onEnterWorkspace}>
+              進入工作台 <ArrowRight size={18} aria-hidden="true" />
+            </button>
+          ) : (
+            <a className="final-cta-button" href="#start">
+              {recoveryMode ? '重設密碼' : '免費開始使用'}{' '}
+              <ArrowRight size={18} aria-hidden="true" />
+            </a>
+          )}
         </section>
       </main>
 
