@@ -28,9 +28,10 @@ import {
   Sun,
   Utensils,
 } from 'lucide-react'
-import { AuthScreen, ChildSetup, InviteDialog, LoadingScreen } from './AuthFlow'
+import { ChildSetup, InviteDialog, LoadingScreen } from './AuthFlow'
 import { CheckupNotes } from './CheckupNotes'
 import { ChildMenu } from './ChildMenu'
+import { LandingPage } from './LandingPage'
 import {
   createEmptyRecord,
   dailyRecordFromRow,
@@ -327,7 +328,7 @@ function App() {
 
   if (!session) {
     return (
-      <AuthScreen
+      <LandingPage
         hasInvitation={Boolean(pendingInvite)}
         onSignIn={signInWithEmail}
       />
