@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import {
   Activity,
+  AlertCircle,
   BarChart3,
   BedDouble,
   CalendarDays,
@@ -13,6 +15,7 @@ import {
   Droplets,
   Heart,
   History,
+  LoaderCircle,
   Minus,
   MoonStar,
   NotebookPen,
@@ -20,100 +23,32 @@ import {
   Plus,
   Save,
   Sparkles,
+  Star,
+  Stethoscope,
   Sun,
   Utensils,
 } from 'lucide-react'
-
-type Tab = 'today' | 'history' | 'trends'
-type Choice = string | null
-
-type DailyRecord = {
-  medicineTaken: boolean | null
-  medicineTime: string
-  dose: string
-  focus: Choice
-  impulse: Choice
-  calm: Choice
-  effectMinutes: Choice
-  durationHours: Choice
-  sleepQuality: Choice
-  bedtime: string
-  wakeTime: string
-  sideEffects: string[]
-  meals: Record<string, Choice>
-  water: number
-  moods: string[]
-  meltdowns: number
-  eyeContact: Choice
-  socialDistance: Choice
-  bodyContact: Choice
-  sensory: string[]
-  notes: string
-  updatedAt: number
-}
-
-const STORAGE_KEY = 'daybyday-records-v1'
-
-const createEmptyRecord = (): DailyRecord => ({
-  medicineTaken: null,
-  medicineTime: '',
-  dose: '',
-  focus: null,
-  impulse: null,
-  calm: null,
-  effectMinutes: null,
-  durationHours: null,
-  sleepQuality: null,
-  bedtime: '',
-  wakeTime: '',
-  sideEffects: [],
-  meals: { 早餐: null, 午餐: null, 晚餐: null, 小食: null },
-  water: 0,
-  moods: [],
-  meltdowns: 0,
-  eyeContact: null,
-  socialDistance: null,
-  bodyContact: null,
-  sensory: [],
-  notes: '',
-  updatedAt: Date.now(),
-})
-
-function localDateKey(date = new Date()) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function dateFromKey(key: string) {
-  const [year, month, day] = key.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
-function shiftDate(key: string, amount: number) {
-  const date = dateFromKey(key)
-  date.setDate(date.getDate() + amount)
-  return localDateKey(date)
-}
-
-function formatDate(key: string, includeYear = false) {
-  return new Intl.DateTimeFormat('zh-HK', {
-    ...(includeYear ? { year: 'numeric' as const } : {}),
-    month: includeYear ? 'long' : 'numeric',
-    day: 'numeric',
-    weekday: 'short',
-  }).format(dateFromKey(key))
-}
-
-function loadRecords(): Record<string, DailyRecord> {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? JSON.parse(stored) : {}
-  } catch {
-    return {}
-  }
-}
+import { AuthScreen, ChildSetup, InviteDialog, LoadingScreen } from './AuthFlow'
+import { CheckupNotes } from './CheckupNotes'
+import { ChildMenu } from './ChildMenu'
+import {
+  createEmptyRecord,
+  dailyRecordFromRow,
+  dailyRecordToRow,
+  dateFromKey,
+  formatDate,
+  localDateKey,
+  shiftDate,
+} from './record-utils'
+import { supabase } from './supabase'
+import type {
+  Child,
+  ChildRole,
+  Choice,
+  DailyRecord,
+  SaveStatus,
+  Tab,
+} from './types'
 
 const focusOptions = [
   { value: '很差', emoji: '😣' },
@@ -143,27 +78,449 @@ const moodOptions = [
   { value: '易喊', emoji: '😢' },
 ]
 
+const PENDING_INVITE_KEY = 'alittlestar-pending-invite-v1'
+
+function readPendingInvitation() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('invite')
+    if (token) {
+      sessionStorage.setItem(PENDING_INVITE_KEY, token)
+      params.delete('invite')
+      const query = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+      )
+      return token
+    }
+    return sessionStorage.getItem(PENDING_INVITE_KEY)
+  } catch {
+    return null
+  }
+}
+
 function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [children, setChildren] = useState<Child[]>([])
+  const [roles, setRoles] = useState<Record<string, ChildRole>>({})
+  const [currentChildId, setCurrentChildId] = useState('')
+  const [childrenLoading, setChildrenLoading] = useState(true)
+  const [bootstrapError, setBootstrapError] = useState('')
+  const [pendingInvite, setPendingInvite] = useState<string | null>(
+    readPendingInvitation,
+  )
+  const [inviteDismissed, setInviteDismissed] = useState(false)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteError, setInviteError] = useState('')
+
+  const loadChildren = useCallback(
+    async (userId: string, preferredChildId?: string) => {
+      setChildrenLoading(true)
+      setBootstrapError('')
+
+      const [childrenResult, membershipsResult] = await Promise.all([
+        supabase.from('children').select('*').order('created_at'),
+        supabase
+          .from('child_members')
+          .select('child_id, role')
+          .eq('user_id', userId),
+      ])
+
+      if (childrenResult.error || membershipsResult.error) {
+        setBootstrapError('未能載入家庭資料，請檢查網絡後再試。')
+        setChildrenLoading(false)
+        return false
+      }
+
+      const nextChildren: Child[] = childrenResult.data.map((child) => ({
+        id: child.id,
+        name: child.name,
+        birthDate: child.birth_date,
+        createdAt: child.created_at,
+      }))
+      const nextRoles = Object.fromEntries(
+        membershipsResult.data.map((membership) => [
+          membership.child_id,
+          membership.role === 'owner' ? 'owner' : 'caregiver',
+        ]),
+      ) as Record<string, ChildRole>
+
+      setChildren(nextChildren)
+      setRoles(nextRoles)
+
+      let savedChildId = ''
+      try {
+        savedChildId = localStorage.getItem(`alittlestar-child:${userId}`) ?? ''
+      } catch {
+        savedChildId = ''
+      }
+
+      const candidateId = preferredChildId || savedChildId
+      const nextCurrentId = nextChildren.some((child) => child.id === candidateId)
+        ? candidateId
+        : (nextChildren[0]?.id ?? '')
+      setCurrentChildId(nextCurrentId)
+      setChildrenLoading(false)
+      return true
+    },
+    [],
+  )
+
+  useEffect(() => {
+    let active = true
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setSession(data.session)
+        setAuthReady(true)
+      }
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (active) {
+        setSession(nextSession)
+        setAuthReady(true)
+      }
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session) {
+      setChildren([])
+      setRoles({})
+      setCurrentChildId('')
+      setChildrenLoading(false)
+      return
+    }
+
+    void loadChildren(session.user.id)
+  }, [loadChildren, session])
+
+  const signInWithEmail = async (email: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: new URL('/', window.location.origin).toString(),
+        shouldCreateUser: true,
+      },
+    })
+    return error ? '未能寄出登入電郵，請稍後再試。' : null
+  }
+
+  const createChild = async (name: string, birthDate: string | null) => {
+    if (!session) {
+      return '登入已失效，請重新登入。'
+    }
+
+    const childId = crypto.randomUUID()
+    const { error } = await supabase
+      .from('children')
+      .insert({
+        id: childId,
+        name,
+        birth_date: birthDate,
+        created_by: session.user.id,
+      })
+
+    if (error) {
+      return '未能建立孩子檔案，請稍後再試。'
+    }
+
+    await loadChildren(session.user.id, childId)
+    return null
+  }
+
+  const updateChild = async (
+    childId: string,
+    name: string,
+    birthDate: string | null,
+  ) => {
+    if (!session) {
+      return '登入已失效，請重新登入。'
+    }
+
+    const { error } = await supabase
+      .from('children')
+      .update({ name, birth_date: birthDate })
+      .eq('id', childId)
+
+    if (error) {
+      return '未能更新孩子資料，請稍後再試。'
+    }
+
+    await loadChildren(session.user.id, childId)
+    return null
+  }
+
+  const acceptInvitation = async () => {
+    if (!session || !pendingInvite) {
+      return '這個邀請連結並不完整，請邀請者重新產生 QR code。'
+    }
+
+    const { data, error } = await supabase.rpc('accept_child_invite', {
+      p_token: pendingInvite,
+    })
+
+    if (error || !data) {
+      return '邀請可能已使用或超過 24 小時，請邀請者重新產生。'
+    }
+
+    try {
+      sessionStorage.removeItem(PENDING_INVITE_KEY)
+    } catch {
+      // The in-memory token is still cleared when storage is unavailable.
+    }
+    setPendingInvite(null)
+    setInviteDismissed(false)
+    await loadChildren(session.user.id, data)
+    return null
+  }
+
+  const clearPendingInvitation = () => {
+    try {
+      sessionStorage.removeItem(PENDING_INVITE_KEY)
+    } catch {
+      // The in-memory token is still cleared when storage is unavailable.
+    }
+    setPendingInvite(null)
+    setInviteError('')
+  }
+
+  const selectChild = (childId: string) => {
+    setCurrentChildId(childId)
+    if (session) {
+      try {
+        localStorage.setItem(`alittlestar-child:${session.user.id}`, childId)
+      } catch {
+        // Remembering the selection is optional.
+      }
+    }
+  }
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+  }
+
+  const confirmInvitation = async () => {
+    setInviteBusy(true)
+    setInviteError('')
+    const message = await acceptInvitation()
+    if (message) {
+      setInviteError(message)
+    }
+    setInviteBusy(false)
+  }
+
+  if (!authReady) {
+    return <LoadingScreen />
+  }
+
+  if (!session) {
+    return (
+      <AuthScreen
+        hasInvitation={Boolean(pendingInvite)}
+        onSignIn={signInWithEmail}
+      />
+    )
+  }
+
+  if (childrenLoading) {
+    return <LoadingScreen />
+  }
+
+  if (bootstrapError) {
+    return (
+      <main className="loading-screen error-screen">
+        <AlertCircle size={30} />
+        <h1>暫時未能載入資料</h1>
+        <p>{bootstrapError}</p>
+        <button
+          className="primary-button"
+          type="button"
+          onClick={() => void loadChildren(session.user.id)}
+        >
+          再試一次
+        </button>
+      </main>
+    )
+  }
+
+  if (!children.length) {
+    return (
+      <ChildSetup
+        pendingInvitation={Boolean(pendingInvite)}
+        onCreate={createChild}
+        onAcceptInvitation={acceptInvitation}
+        onDismissInvitation={clearPendingInvitation}
+        onSignOut={signOut}
+      />
+    )
+  }
+
+  const currentChild =
+    children.find((child) => child.id === currentChildId) ?? children[0]
+
+  return (
+    <>
+      <Tracker
+        session={session}
+        children={children}
+        currentChild={currentChild}
+        roles={roles}
+        onSelectChild={selectChild}
+        onCreateChild={createChild}
+        onUpdateChild={updateChild}
+        onSignOut={signOut}
+      />
+      <InviteDialog
+        open={Boolean(pendingInvite) && !inviteDismissed}
+        busy={inviteBusy}
+        error={inviteError}
+        onAccept={() => void confirmInvitation()}
+        onClose={() => setInviteDismissed(true)}
+      />
+    </>
+  )
+}
+
+function Tracker({
+  session,
+  children,
+  currentChild,
+  roles,
+  onSelectChild,
+  onCreateChild,
+  onUpdateChild,
+  onSignOut,
+}: {
+  session: Session
+  children: Child[]
+  currentChild: Child
+  roles: Record<string, ChildRole>
+  onSelectChild: (childId: string) => void
+  onCreateChild: (
+    name: string,
+    birthDate: string | null,
+  ) => Promise<string | null>
+  onUpdateChild: (
+    childId: string,
+    name: string,
+    birthDate: string | null,
+  ) => Promise<string | null>
+  onSignOut: () => Promise<void>
+}) {
   const [tab, setTab] = useState<Tab>('today')
   const [selectedDate, setSelectedDate] = useState(localDateKey)
-  const [records, setRecords] = useState<Record<string, DailyRecord>>(loadRecords)
+  const [records, setRecords] = useState<Record<string, DailyRecord>>({})
   const [showNotes, setShowNotes] = useState(false)
+  const [showChildMenu, setShowChildMenu] = useState(false)
+  const [recordsLoading, setRecordsLoading] = useState(true)
+  const [recordError, setRecordError] = useState('')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const saveTimers = useRef(new Map<string, number>())
   const today = localDateKey()
   const record = records[selectedDate] ?? createEmptyRecord()
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
-  }, [records])
+    let active = true
+    setRecords({})
+    setRecordsLoading(true)
+    setRecordError('')
+    setSaveStatus('idle')
+    setShowNotes(false)
+
+    const loadRecords = async () => {
+      const { data, error } = await supabase
+        .from('daily_records')
+        .select('*')
+        .eq('child_id', currentChild.id)
+        .order('record_date')
+
+      if (!active) {
+        return
+      }
+
+      if (error) {
+        setRecordError('未能載入每日記錄，請重新整理後再試。')
+        setRecordsLoading(false)
+        return
+      }
+
+      setRecords(
+        Object.fromEntries(
+          data.map((row) => [row.record_date, dailyRecordFromRow(row)]),
+        ),
+      )
+      setRecordsLoading(false)
+    }
+
+    void loadRecords()
+    return () => {
+      active = false
+    }
+  }, [currentChild.id])
+
+  useEffect(
+    () => () => {
+      for (const timer of saveTimers.current.values()) {
+        window.clearTimeout(timer)
+      }
+      saveTimers.current.clear()
+    },
+    [],
+  )
+
+  const scheduleSave = useCallback(
+    (date: string, nextRecord: DailyRecord) => {
+      const childId = currentChild.id
+      const timerKey = `${childId}:${date}`
+      const currentTimer = saveTimers.current.get(timerKey)
+      if (currentTimer) {
+        window.clearTimeout(currentTimer)
+      }
+
+      setSaveStatus('saving')
+      setRecordError('')
+      const timer = window.setTimeout(() => {
+        saveTimers.current.delete(timerKey)
+        void supabase
+          .from('daily_records')
+          .upsert(
+            dailyRecordToRow(childId, date, nextRecord, session.user.id),
+            { onConflict: 'child_id,record_date' },
+          )
+          .then(({ error }) => {
+            if (error) {
+              setSaveStatus('error')
+              setRecordError('未能儲存最新變更，請檢查網絡後再試。')
+              return
+            }
+            setSaveStatus('saved')
+          })
+      }, 650)
+      saveTimers.current.set(timerKey, timer)
+    },
+    [currentChild.id, session.user.id],
+  )
 
   const updateRecord = (patch: Partial<DailyRecord>) => {
-    setRecords((current) => ({
-      ...current,
-      [selectedDate]: {
-        ...(current[selectedDate] ?? createEmptyRecord()),
-        ...patch,
-        updatedAt: Date.now(),
-      },
-    }))
+    const nextRecord = {
+      ...record,
+      ...patch,
+      updatedAt: Date.now(),
+    }
+    setRecords((current) => ({ ...current, [selectedDate]: nextRecord }))
+    scheduleSave(selectedDate, nextRecord)
   }
 
   const toggleList = (
@@ -193,8 +550,14 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Header />
+      <Header child={currentChild} onOpenMenu={() => setShowChildMenu(true)} />
       <main className="main-content">
+        {recordError ? (
+          <div className="app-error" role="alert">
+            <AlertCircle size={18} />
+            <span>{recordError}</span>
+          </div>
+        ) : null}
         {tab === 'today' ? (
           <>
             <DateNavigator
@@ -202,7 +565,13 @@ function App() {
               today={today}
               onChange={setSelectedDate}
             />
-            <ProgressCard completion={completion} date={selectedDate} today={today} />
+            <ProgressCard
+              completion={completion}
+              date={selectedDate}
+              today={today}
+              saveStatus={saveStatus}
+              loading={recordsLoading}
+            />
             <div className="section-stack">
               <MedicationCard record={record} updateRecord={updateRecord} />
               <ObservationCard record={record} updateRecord={updateRecord} />
@@ -236,28 +605,57 @@ function App() {
           />
         ) : null}
         {tab === 'trends' ? <TrendsView records={records} /> : null}
+        {tab === 'checkup' ? (
+          <CheckupNotes child={currentChild} userId={session.user.id} />
+        ) : null}
       </main>
       <BottomNav tab={tab} onChange={setTab} />
+      <ChildMenu
+        open={showChildMenu}
+        children={children}
+        currentChild={currentChild}
+        roles={roles}
+        userEmail={session.user.email ?? 'Google 帳戶'}
+        onClose={() => setShowChildMenu(false)}
+        onSelect={(childId) => {
+          onSelectChild(childId)
+          setShowChildMenu(false)
+        }}
+        onCreate={onCreateChild}
+        onUpdate={onUpdateChild}
+        onSignOut={onSignOut}
+      />
     </div>
   )
 }
 
-function Header() {
+function Header({
+  child,
+  onOpenMenu,
+}: {
+  child: Child
+  onOpenMenu: () => void
+}) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
-            <Sun size={22} strokeWidth={2.2} />
+            <Star size={21} fill="currentColor" />
           </span>
           <div>
-            <strong>日日伴</strong>
+            <strong>A Little Star</strong>
             <span>每天多了解一點</span>
           </div>
         </div>
-        <button className="child-switcher" type="button" aria-label="選擇孩子">
-          <span className="avatar">樂</span>
-          <span>樂樂</span>
+        <button
+          className="child-switcher"
+          type="button"
+          aria-label="選擇孩子及管理家庭"
+          onClick={onOpenMenu}
+        >
+          <span className="avatar">{child.name.slice(0, 1)}</span>
+          <span>{child.name}</span>
           <ChevronDown size={16} />
         </button>
       </div>
@@ -311,11 +709,23 @@ function ProgressCard({
   completion,
   date,
   today,
+  saveStatus,
+  loading,
 }: {
   completion: number
   date: string
   today: string
+  saveStatus: SaveStatus
+  loading: boolean
 }) {
+  const statusLabel = loading
+    ? '正在同步'
+    : saveStatus === 'saving'
+      ? '正在儲存'
+      : saveStatus === 'error'
+        ? '儲存失敗'
+        : '已同步雲端'
+
   return (
     <section className="progress-card">
       <div className="progress-ring" style={{ '--progress': `${completion * 3.6}deg` } as React.CSSProperties}>
@@ -324,10 +734,17 @@ function ProgressCard({
       <div className="progress-copy">
         <span className="eyebrow">{date === today ? '今日記錄' : '當日記錄'}</span>
         <h1>{completion === 100 ? '今天記錄完成了！' : '輕鬆記下孩子的狀況'}</h1>
-        <p>{completion === 0 ? '每項只需幾個點選，約 2 分鐘完成。' : '所有變更已自動儲存在這部裝置。'}</p>
+        <p>{completion === 0 ? '每項只需幾個點選，約 2 分鐘完成。' : '家庭成員看到的記錄會保持一致。'}</p>
       </div>
-      <span className="save-status">
-        <Save size={15} /> 自動儲存
+      <span className={`save-status ${saveStatus}`}>
+        {loading || saveStatus === 'saving' ? (
+          <LoaderCircle className="spin" size={15} />
+        ) : saveStatus === 'error' ? (
+          <AlertCircle size={15} />
+        ) : (
+          <Save size={15} />
+        )}
+        {statusLabel}
       </span>
     </section>
   )
@@ -923,6 +1340,7 @@ function BottomNav({
     { value: 'today' as const, label: '今日', icon: <CircleUserRound size={21} /> },
     { value: 'history' as const, label: '記錄', icon: <CalendarDays size={21} /> },
     { value: 'trends' as const, label: '趨勢', icon: <BarChart3 size={21} /> },
+    { value: 'checkup' as const, label: '覆診', icon: <Stethoscope size={21} /> },
   ]
   return (
     <nav className="bottom-nav" aria-label="主要選單">

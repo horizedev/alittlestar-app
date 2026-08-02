@@ -1,8 +1,8 @@
 {
-  "name": "daybyday",
+  "name": "a-little-star",
   "version": "0.1.0",
   "private": true,
-  "description": "ADHD child daily medicine and wellbeing tracker",
+  "description": "A Little Star 家庭共同照顧與孩子每日身心記錄",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -14,7 +14,9 @@
   "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
     "lucide-react": "^1.28.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
