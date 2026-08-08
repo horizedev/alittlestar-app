@@ -23,7 +23,6 @@ import {
   Plus,
   Save,
   Sparkles,
-  Star,
   Stethoscope,
   Sun,
   Utensils,
@@ -31,7 +30,11 @@ import {
 import { ChildSetup, InviteDialog, LoadingScreen } from './AuthFlow'
 import { CheckupNotes } from './CheckupNotes'
 import { ChildMenu } from './ChildMenu'
+import { BrandMark } from './Brand'
 import { LandingPage } from './LandingPage'
+import { LegalPage } from './LegalPage'
+import type { LegalDoc } from './legal'
+import { LEGAL_UPDATED_AT } from './legal'
 import {
   createEmptyRecord,
   dailyRecordFromRow,
@@ -102,12 +105,72 @@ function readPendingInvitation() {
   }
 }
 
+function readLegalDoc(): LegalDoc | null {
+  try {
+    const value = new URLSearchParams(window.location.search).get('legal')
+    return value === 'terms' || value === 'privacy' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function hasResetQueryFlag() {
+  try {
+    return new URLSearchParams(window.location.search).get('reset') === '1'
+  } catch {
+    return false
+  }
+}
+
+function hasRecoveryHashType() {
+  try {
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash
+    return new URLSearchParams(hash).get('type') === 'recovery'
+  } catch {
+    return false
+  }
+}
+
+function isPasswordRecoveryIntent() {
+  return hasResetQueryFlag() || hasRecoveryHashType()
+}
+
+function markPasswordRecoveryInUrl() {
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('app')
+    url.searchParams.set('reset', '1')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  } catch {
+    // Recovery UI still works without URL sync.
+  }
+}
+
+function clearPasswordRecoveryFromUrl() {
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('reset')
+    // Drop auth tokens from the hash after recovery completes.
+    const nextHash = url.hash && !url.hash.includes('type=') ? url.hash : ''
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${nextHash}`)
+  } catch {
+    // Landing state still works without URL sync.
+  }
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState(() => isPasswordRecoveryIntent())
+  const [recoveryLinkError, setRecoveryLinkError] = useState('')
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(() => readLegalDoc())
   const [showWorkspace, setShowWorkspace] = useState(() => {
     try {
+      if (isPasswordRecoveryIntent()) {
+        return false
+      }
       return new URLSearchParams(window.location.search).get('app') === '1'
     } catch {
       return false
@@ -130,6 +193,7 @@ function App() {
     setShowWorkspace(true)
     try {
       const url = new URL(window.location.href)
+      url.searchParams.delete('reset')
       url.searchParams.set('app', '1')
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
     } catch {
@@ -146,6 +210,61 @@ function App() {
     } catch {
       // Landing state still works without URL sync.
     }
+  }, [])
+
+  const beginPasswordRecovery = useCallback(() => {
+    setRecoveryMode(true)
+    setRecoveryLinkError('')
+    setShowWorkspace(false)
+    markPasswordRecoveryInUrl()
+  }, [])
+
+  const endPasswordRecovery = useCallback(() => {
+    setRecoveryMode(false)
+    setRecoveryLinkError('')
+    clearPasswordRecoveryFromUrl()
+  }, [])
+
+  const openLegal = useCallback((doc: LegalDoc) => {
+    setLegalDoc(doc)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('app')
+      url.searchParams.set('legal', doc)
+      window.history.pushState({}, '', `${url.pathname}${url.search}`)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      // Legal page still works without URL sync.
+    }
+  }, [])
+
+  const closeLegal = useCallback(() => {
+    setLegalDoc(null)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('legal')
+      window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    } catch {
+      // Landing state still works without URL sync.
+    }
+  }, [])
+
+  useEffect(() => {
+    const onPopState = () => {
+      setLegalDoc(readLegalDoc())
+      const recovering = isPasswordRecoveryIntent()
+      setRecoveryMode(recovering)
+      try {
+        setShowWorkspace(
+          !recovering &&
+            new URLSearchParams(window.location.search).get('app') === '1',
+        )
+      } catch {
+        // Ignore malformed URLs.
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   const loadChildren = useCallback(
@@ -210,6 +329,9 @@ function App() {
       }
       setSession(data.session)
       setAuthReady(true)
+      if (data.session && isPasswordRecoveryIntent()) {
+        beginPasswordRecovery()
+      }
     })
 
     const {
@@ -221,11 +343,10 @@ function App() {
       setSession(nextSession)
       setAuthReady(true)
       if (event === 'PASSWORD_RECOVERY') {
-        setRecoveryMode(true)
-        leaveWorkspace()
+        beginPasswordRecovery()
       }
       if (event === 'SIGNED_OUT') {
-        setRecoveryMode(false)
+        endPasswordRecovery()
         leaveWorkspace()
       }
     })
@@ -234,7 +355,48 @@ function App() {
       active = false
       subscription.unsubscribe()
     }
-  }, [leaveWorkspace])
+  }, [beginPasswordRecovery, endPasswordRecovery, leaveWorkspace])
+
+  useEffect(() => {
+    if (!authReady || !recoveryMode || session) {
+      if (session && recoveryMode) {
+        setRecoveryLinkError('')
+      }
+      return
+    }
+
+    const hasPendingAuthParams = (() => {
+      try {
+        const params = new URLSearchParams(window.location.search)
+        if (params.has('code') || params.has('token_hash')) {
+          return true
+        }
+        const hash = window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : window.location.hash
+        const hashParams = new URLSearchParams(hash)
+        return (
+          hashParams.has('access_token') ||
+          hashParams.get('type') === 'recovery'
+        )
+      } catch {
+        return false
+      }
+    })()
+
+    if (hasPendingAuthParams) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setRecoveryLinkError(
+        '重設連結無效或已過期。請重新申請寄送重設密碼郵件。',
+      )
+      clearPasswordRecoveryFromUrl()
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [authReady, recoveryMode, session])
 
   useEffect(() => {
     if (!session || !showWorkspace || recoveryMode) {
@@ -265,6 +427,9 @@ function App() {
     if (lower.includes('same password')) {
       return '新密碼不可與舊密碼相同。'
     }
+    if (lower.includes('expired') || lower.includes('invalid')) {
+      return '重設連結無效或已過期，請重新申請。'
+    }
     return '操作未能完成，請稍後再試。'
   }
 
@@ -273,17 +438,23 @@ function App() {
     if (error) {
       return mapAuthError(error.message)
     }
-    setRecoveryMode(false)
+    endPasswordRecovery()
     enterWorkspace()
     return null
   }
 
   const signUpWithPassword = async (email: string, password: string) => {
+    const acceptedAt = new Date().toISOString()
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: new URL('/?app=1', window.location.origin).toString(),
+        data: {
+          accepted_terms_at: acceptedAt,
+          accepted_privacy_at: acceptedAt,
+          legal_version: LEGAL_UPDATED_AT,
+        },
       },
     })
     if (error) {
@@ -292,7 +463,7 @@ function App() {
     if (!data.session) {
       return 'NOTICE:帳戶已建立。請檢查電郵完成驗證後再登入。'
     }
-    setRecoveryMode(false)
+    endPasswordRecovery()
     enterWorkspace()
     return null
   }
@@ -301,15 +472,21 @@ function App() {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: new URL('/?reset=1', window.location.origin).toString(),
     })
-    return error ? '未能寄出重設密碼郵件，請稍後再試。' : null
+    if (error) {
+      return mapAuthError(error.message)
+    }
+    return null
   }
 
   const updatePassword = async (password: string) => {
+    if (!session) {
+      return '重設連結無效或已過期，請重新申請。'
+    }
     const { error } = await supabase.auth.updateUser({ password })
     if (error) {
       return mapAuthError(error.message)
     }
-    setRecoveryMode(false)
+    endPasswordRecovery()
     enterWorkspace()
     return null
   }
@@ -406,7 +583,7 @@ function App() {
 
   const signOut = async () => {
     leaveWorkspace()
-    setRecoveryMode(false)
+    endPasswordRecovery()
     await supabase.auth.signOut()
   }
 
@@ -424,17 +601,34 @@ function App() {
     return <LoadingScreen />
   }
 
+  if (legalDoc) {
+    return (
+      <LegalPage
+        doc={legalDoc}
+        onBack={closeLegal}
+        onOpenDoc={openLegal}
+      />
+    )
+  }
+
   if (!session || recoveryMode || !showWorkspace) {
     return (
       <LandingPage
         hasInvitation={Boolean(pendingInvite)}
         isLoggedIn={Boolean(session) && !recoveryMode}
         recoveryMode={recoveryMode}
+        recoverySessionReady={Boolean(session)}
+        recoveryLinkError={recoveryLinkError}
         onEnterWorkspace={enterWorkspace}
         onSignIn={signInWithPassword}
         onSignUp={signUpWithPassword}
         onForgotPassword={requestPasswordReset}
         onUpdatePassword={updatePassword}
+        onOpenLegal={openLegal}
+        onClearRecoveryError={() => {
+          setRecoveryLinkError('')
+          endPasswordRecovery()
+        }}
       />
     )
   }
@@ -745,12 +939,10 @@ function Header({
     <header className="topbar">
       <div className="topbar-inner">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <Star size={21} fill="currentColor" />
-          </span>
+          <BrandMark size={28} />
           <div>
-            <strong>A Little Star</strong>
-            <span>每天多了解一點</span>
+            <strong>童步</strong>
+            <span>Childsteps</span>
           </div>
         </div>
         <button

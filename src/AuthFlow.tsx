@@ -4,17 +4,15 @@ import {
   LoaderCircle,
   QrCode,
   Sparkles,
-  Star,
   UserPlus,
   X,
 } from 'lucide-react'
+import { BrandMark, BrandName } from './Brand'
 
 export function LoadingScreen() {
   return (
     <main className="loading-screen" aria-live="polite">
-      <span className="brand-mark">
-        <Star size={24} fill="currentColor" />
-      </span>
+      <BrandMark size={36} />
       <LoaderCircle className="spin" size={24} />
       <p>正在準備你的小天地…</p>
     </main>
@@ -70,10 +68,8 @@ export function ChildSetup({
     <main className="setup-page">
       <section className="setup-card">
         <div className="auth-brand compact">
-          <span className="brand-mark">
-            <Star size={22} fill="currentColor" />
-          </span>
-          <span>A Little Star</span>
+          <BrandMark size={28} />
+          <BrandName />
         </div>
 
         {pendingInvitation ? (
@@ -172,7 +168,7 @@ export function InviteDialog({
           <X size={19} />
         </button>
         <span className="setup-icon purple"><QrCode size={27} /></span>
-        <span className="eyebrow">A Little Star 邀請</span>
+        <span className="eyebrow">童步邀請</span>
         <h2 id="invite-title">一起照顧這位孩子？</h2>
         <p>接受後，你和邀請者都可以查看及更新孩子的檔案、每日記錄和覆診筆記。</p>
         <button className="primary-button" type="button" disabled={busy} onClick={onAccept}>

@@ -12,29 +12,38 @@ import {
   QrCode,
   ShieldCheck,
   Sparkles,
-  Star,
   UsersRound,
 } from 'lucide-react'
 import { AuthPanel } from './AuthPanel'
+import { BrandMark, BrandName } from './Brand'
+import type { LegalDoc } from './legal'
 
 export function LandingPage({
   hasInvitation,
   isLoggedIn,
   recoveryMode,
+  recoverySessionReady,
+  recoveryLinkError,
   onEnterWorkspace,
   onSignIn,
   onSignUp,
   onForgotPassword,
   onUpdatePassword,
+  onOpenLegal,
+  onClearRecoveryError,
 }: {
   hasInvitation: boolean
   isLoggedIn: boolean
   recoveryMode: boolean
+  recoverySessionReady: boolean
+  recoveryLinkError: string
   onEnterWorkspace: () => void
   onSignIn: (email: string, password: string) => Promise<string | null>
   onSignUp: (email: string, password: string) => Promise<string | null>
   onForgotPassword: (email: string) => Promise<string | null>
   onUpdatePassword: (password: string) => Promise<string | null>
+  onOpenLegal: (doc: LegalDoc) => void
+  onClearRecoveryError: () => void
 }) {
   return (
     <div className="landing-page" id="top">
@@ -42,16 +51,14 @@ export function LandingPage({
 
       <header className="landing-header">
         <nav className="landing-nav" aria-label="主要導覽">
-          <a className="landing-brand" href="#top" aria-label="A Little Star 首頁">
-            <span className="brand-mark" aria-hidden="true">
-              <Star size={21} fill="currentColor" />
-            </span>
-            <span translate="no">A Little Star</span>
+          <a className="landing-brand" href="#top" aria-label="童步 Childsteps 首頁">
+            <BrandMark size={28} />
+            <BrandName />
           </a>
           <div className="landing-nav-links">
             <a href="#features">主要功能</a>
             <a href="#how-it-works">使用方法</a>
-            <a href="#privacy">資料安全</a>
+            <a href="#data-safety">資料安全</a>
           </div>
           {isLoggedIn && !recoveryMode ? (
             <button className="landing-nav-cta" type="button" onClick={onEnterWorkspace}>
@@ -118,10 +125,14 @@ export function LandingPage({
               <AuthPanel
                 hasInvitation={hasInvitation}
                 recoveryMode={recoveryMode}
+                recoverySessionReady={recoverySessionReady}
+                recoveryLinkError={recoveryLinkError}
                 onSignIn={onSignIn}
                 onSignUp={onSignUp}
                 onForgotPassword={onForgotPassword}
                 onUpdatePassword={onUpdatePassword}
+                onOpenLegal={onOpenLegal}
+                onClearRecoveryError={onClearRecoveryError}
               />
             )}
           </div>
@@ -240,7 +251,7 @@ export function LandingPage({
           </div>
         </section>
 
-        <section className="landing-section privacy-section" id="privacy" aria-labelledby="privacy-title">
+        <section className="landing-section privacy-section" id="data-safety" aria-labelledby="privacy-title">
           <div className="privacy-copy">
             <span className="privacy-icon"><LockKeyhole size={28} aria-hidden="true" /></span>
             <span className="eyebrow">私隱由設計開始</span>
@@ -267,9 +278,7 @@ export function LandingPage({
         </section>
 
         <section className="landing-final-cta" aria-labelledby="final-cta-title">
-          <span className="brand-mark large" aria-hidden="true">
-            <Star size={29} fill="currentColor" />
-          </span>
+          <BrandMark size={48} className="large" />
           <h2 id="final-cta-title">從今天開始，更了解孩子一點。</h2>
           <p>不用準備，不用學習複雜工具。用電郵與密碼，建立第一份記錄。</p>
           {isLoggedIn && !recoveryMode ? (
@@ -287,13 +296,19 @@ export function LandingPage({
 
       <footer className="landing-footer">
         <a className="landing-brand" href="#top">
-          <span className="brand-mark" aria-hidden="true">
-            <Star size={19} fill="currentColor" />
-          </span>
-          <span translate="no">A Little Star</span>
+          <BrandMark size={24} />
+          <BrandName bilingual />
         </a>
         <p>陪伴家庭記錄孩子每天的小變化。</p>
-        <span>© {new Date().getFullYear()} A Little Star</span>
+        <nav className="landing-footer-links" aria-label="法律資訊">
+          <button type="button" className="text-button" onClick={() => onOpenLegal('terms')}>
+            服務條款
+          </button>
+          <button type="button" className="text-button" onClick={() => onOpenLegal('privacy')}>
+            私隱政策
+          </button>
+        </nav>
+        <span>© {new Date().getFullYear()} 童步 Childsteps</span>
       </footer>
     </div>
   )
@@ -312,8 +327,8 @@ function ProductPreview() {
       <div className="product-window">
         <div className="product-topbar">
           <div className="product-brand">
-            <span><Star size={14} fill="currentColor" /></span>
-            <strong>A Little Star</strong>
+            <BrandMark size={18} />
+            <strong>童步</strong>
           </div>
           <div className="product-child">
             <span>樂</span>

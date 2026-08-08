@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   Eye,
@@ -10,25 +10,34 @@ import {
   QrCode,
   UserPlus,
 } from 'lucide-react'
+import type { LegalDoc } from './legal'
 
 export type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset'
 
 type AuthPanelProps = {
   hasInvitation: boolean
   recoveryMode: boolean
+  recoverySessionReady: boolean
+  recoveryLinkError: string
   onSignIn: (email: string, password: string) => Promise<string | null>
   onSignUp: (email: string, password: string) => Promise<string | null>
   onForgotPassword: (email: string) => Promise<string | null>
   onUpdatePassword: (password: string) => Promise<string | null>
+  onOpenLegal: (doc: LegalDoc) => void
+  onClearRecoveryError: () => void
 }
 
 export function AuthPanel({
   hasInvitation,
   recoveryMode,
+  recoverySessionReady,
+  recoveryLinkError,
   onSignIn,
   onSignUp,
   onForgotPassword,
   onUpdatePassword,
+  onOpenLegal,
+  onClearRecoveryError,
 }: AuthPanelProps) {
   const [mode, setMode] = useState<AuthMode>(
     recoveryMode ? 'reset' : 'signin',
@@ -36,20 +45,41 @@ export function AuthPanel({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [acceptedLegal, setAcceptedLegal] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const activeMode = recoveryMode ? 'reset' : mode
+  const activeMode = recoveryMode && !recoveryLinkError ? 'reset' : mode
+
+  useEffect(() => {
+    if (recoveryMode && !recoveryLinkError) {
+      setMode('reset')
+      setError('')
+      setNotice('')
+      return
+    }
+    if (recoveryLinkError) {
+      setMode('forgot')
+      setError(recoveryLinkError)
+    }
+  }, [recoveryLinkError, recoveryMode])
 
   const switchMode = (next: AuthMode) => {
+    if (recoveryMode && !recoveryLinkError && next !== 'reset') {
+      return
+    }
     setMode(next)
     setError('')
     setNotice('')
     setPassword('')
     setConfirmPassword('')
+    setAcceptedLegal(false)
     setShowPassword(false)
+    if (recoveryLinkError) {
+      onClearRecoveryError()
+    }
   }
 
   const submit = async (event: FormEvent) => {
@@ -77,6 +107,11 @@ export function AuthPanel({
     }
 
     if (activeMode === 'reset') {
+      if (!recoverySessionReady) {
+        setError('正在驗證重設連結，請稍候…')
+        setBusy(false)
+        return
+      }
       if (password.length < 8) {
         setError('新密碼至少需要 8 個字元。')
         setBusy(false)
@@ -109,6 +144,11 @@ export function AuthPanel({
       }
       if (password !== confirmPassword) {
         setError('兩次輸入的密碼不一致。')
+        setBusy(false)
+        return
+      }
+      if (!acceptedLegal) {
+        setError('註冊前請先閱讀並同意服務條款與私隱政策。')
         setBusy(false)
         return
       }
@@ -169,6 +209,9 @@ export function AuthPanel({
       <div className="signin-heading">
         <span className="eyebrow">{copy.eyebrow}</span>
         <h2 id="signin-title">{copy.title}</h2>
+        {activeMode === 'reset' && !recoverySessionReady ? (
+          <p className="auth-recovery-status">正在驗證重設連結…</p>
+        ) : null}
       </div>
 
       {activeMode === 'signin' || activeMode === 'signup' ? (
@@ -302,7 +345,50 @@ export function AuthPanel({
             </div>
           ) : null}
 
-          <button className="primary-button auth-submit" type="submit" disabled={busy}>
+          {activeMode === 'signup' ? (
+            <label className="auth-legal-consent" htmlFor="auth-legal-consent">
+              <input
+                id="auth-legal-consent"
+                name="acceptedLegal"
+                type="checkbox"
+                checked={acceptedLegal}
+                onChange={(event) => setAcceptedLegal(event.target.checked)}
+                required
+              />
+              <span>
+                我已閱讀並同意
+                {' '}
+                <button
+                  className="text-button auth-inline-link"
+                  type="button"
+                  onClick={() => onOpenLegal('terms')}
+                >
+                  《服務條款》
+                </button>
+                {' '}
+                及
+                {' '}
+                <button
+                  className="text-button auth-inline-link"
+                  type="button"
+                  onClick={() => onOpenLegal('privacy')}
+                >
+                  《私隱政策》
+                </button>
+                。
+              </span>
+            </label>
+          ) : null}
+
+          <button
+            className="primary-button auth-submit"
+            type="submit"
+            disabled={
+              busy ||
+              (activeMode === 'signup' && !acceptedLegal) ||
+              (activeMode === 'reset' && !recoverySessionReady)
+            }
+          >
             {busy ? (
               <LoaderCircle className="spin" size={19} aria-hidden="true" />
             ) : activeMode === 'signup' ? (
@@ -330,7 +416,9 @@ export function AuthPanel({
               ? '我們會寄出一次性連結，讓你安全地重設密碼。'
               : activeMode === 'reset'
                 ? '更新後會立即返回你的工作台。'
-                : '登入即表示你同意妥善保管孩子的敏感資料。'}
+                : activeMode === 'signup'
+                  ? '請先勾選同意條款後再建立帳戶。'
+                  : '登入即表示你同意妥善保管孩子的敏感資料。'}
           </small>
         </form>
       )}

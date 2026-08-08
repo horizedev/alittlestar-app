@@ -156,7 +156,7 @@ export function ChildMenu({
     try {
       await navigator.share({
         title: `共同管理 ${currentChild.name} 的檔案`,
-        text: '請使用這個一次性邀請加入 A Little Star。',
+        text: '請使用這個一次性邀請加入童步 Childsteps。',
         url: inviteUrl,
       })
     } catch {
