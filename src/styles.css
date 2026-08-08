@@ -1727,6 +1727,29 @@ textarea {
   font-size: 9px;
 }
 
+.account-footer-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.account-footer-meta span,
+.account-footer-meta a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-footer-meta a {
+  color: var(--sage);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.account-footer-meta a:hover {
+  text-decoration: underline;
+}
+
 .account-footer span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3241,11 +3264,13 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 14px;
+  flex-wrap: wrap;
 }
 
 .landing-footer-links .text-button {
   font-size: 10px;
   color: #67716c;
+  text-decoration: none;
 }
 
 .landing-footer > span {
@@ -3640,8 +3665,20 @@ textarea {
 
 .legal-footer {
   width: min(100% - 40px, 820px);
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   margin-bottom: 28px;
+}
+
+.legal-support-link {
+  justify-self: center;
+  font-size: 11px;
+  color: var(--sage);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.legal-support-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 720px) {

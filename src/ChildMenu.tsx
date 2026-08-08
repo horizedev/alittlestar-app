@@ -332,7 +332,10 @@ export function ChildMenu({
         {error ? <p className="form-error" role="alert">{error}</p> : null}
 
         <footer className="account-footer">
-          <span>{userEmail}</span>
+          <div className="account-footer-meta">
+            <span>{userEmail}</span>
+            <a href="mailto:support@childsteps.fit">支援：support@childsteps.fit</a>
+          </div>
           <button type="button" onClick={onSignOut}>
             <LogOut size={16} /> 登出
           </button>

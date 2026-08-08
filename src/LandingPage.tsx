@@ -300,7 +300,10 @@ export function LandingPage({
           <BrandName bilingual />
         </a>
         <p>陪伴家庭記錄孩子每天的小變化。</p>
-        <nav className="landing-footer-links" aria-label="法律資訊">
+        <nav className="landing-footer-links" aria-label="聯絡與法律資訊">
+          <a className="text-button" href="mailto:support@childsteps.fit">
+            support@childsteps.fit
+          </a>
           <button type="button" className="text-button" onClick={() => onOpenLegal('terms')}>
             服務條款
           </button>

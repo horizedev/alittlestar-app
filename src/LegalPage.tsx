@@ -124,6 +124,9 @@ export function LegalPage({
           <BrandMark size={24} />
           <BrandName bilingual />
         </div>
+        <a className="text-button legal-support-link" href="mailto:support@childsteps.fit">
+          support@childsteps.fit
+        </a>
         <span>© {new Date().getFullYear()} 童步 Childsteps</span>
       </footer>
     </div>
